@@ -1,0 +1,13 @@
+{
+  "private": true,
+  "name": "gypsum-actions",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Actions for the gypsum API",
+  "main": "src/stub.js",
+  "author": "LTLA <infinite.monkeys.with.keyboards@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "aws-sdk": "^2.1221.0"
+  }
+}

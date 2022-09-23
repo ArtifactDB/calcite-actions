@@ -1,0 +1,39 @@
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: "Project identifier"
+        required: true
+        type: string
+      version:
+        description: "Project version"
+        required: false
+        type: string
+
+name: Index gypsum project
+
+jobs:
+  index-project:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Cache modules
+        uses: actions/cache@v3
+        with:
+          path: node_modules/
+          key: node-${{ hashFiles('**/package.json') }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v3.4.1
+
+      - name: Install required packages
+        run: npm i
+
+      - name: Index project
+        run: node src/index-project.js gypsum-test ${{ inputs.project }} ${{ inputs.version }}
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
