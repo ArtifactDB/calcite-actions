@@ -30,7 +30,7 @@ jobs:
         run: npm i
 
       - name: Index project
-        run: node --experimental-fetch src/index-project.js gypsum-test ${{ github.repository }} ${{ inputs.issue }} ${{ github.issue }}
+        run: node --experimental-fetch src/index-project.js gypsum-test ${{ github.repository }} ${{ inputs.issue }} ${{ github.event.issue.number }}
         env:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
