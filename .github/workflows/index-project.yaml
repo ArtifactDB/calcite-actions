@@ -1,10 +1,4 @@
 on:
-  workflow_dispatch:
-    inputs:
-      issue:
-        description: "Issue number"
-        required: true
-        type: number
   issues:
     types: [opened]
 
@@ -13,6 +7,7 @@ name: Index gypsum project
 jobs:
   index-project:
     runs-on: ubuntu-latest
+    if: github.event.issue.title == 'upload complete' && github.event.issue.user.login == 'ArtifactDB-bot'
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
@@ -30,10 +25,12 @@ jobs:
         run: npm i
 
       - name: Index project
-        run: node --experimental-fetch src/index-project.js gypsum-test ${{ github.repository }} ${{ inputs.issue }} ${{ github.event.issue.number }}
+        run: |
+            echo '${{ github.event.issue.body }}' > parameters.json
+            node src/index-project.js gypsum-test ${{ github.repository }} ${{ github.event.issue.number }} parameters.json
         env:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_BOT_TOKEN: ${{ secrets.GH_BOT_TOKEN }}
 

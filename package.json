@@ -9,5 +9,8 @@
   "license": "MIT",
   "dependencies": {
     "aws-sdk": "^2.1221.0"
+  },
+  "devDependencies": {
+    "isomorphic-fetch": "^3.0.0"
   }
 }
