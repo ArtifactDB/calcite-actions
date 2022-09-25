@@ -144,7 +144,7 @@ try {
     // Checking if permissions exist for the project; if not, we save them.
     {
         let overwrite = body.overwrite_permissions;
-        let permpath = project + "/" + version + "/..permissions.json";
+        let permpath = project + "/..permissions.json";
 
         if (!overwrite) {
             try {
