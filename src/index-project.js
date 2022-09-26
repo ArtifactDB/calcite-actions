@@ -1,7 +1,7 @@
 /**
- * Index a gypsum project, given command-line arguments specifying the bucket
- * name, project and version. This mostly involves finalizing the JSON files,
- * given that gypsum doesn't have any search capabilities.
+ * Index a version of a gypsum project. This mostly involves creating some
+ * summary JSON files for each project version, given that gypsum doesn't have
+ * any search capabilities.
  *
  * We expect the following environment variables to be available:
  *
@@ -15,6 +15,7 @@
  * 1. The name of the R2 bucket of interest.
  * 2. The full name (owner/repo) of the GitHub CI repository (i.e., the one containing this script).
  * 3. The issue number.
+ * 4. A path to a file containing the indexing parameters: this is typically the issue body.
  */
 
 import S3 from 'aws-sdk/clients/s3.js';
@@ -54,37 +55,48 @@ try {
     let version = body.version;
     let promises = [];
 
-    // Pulling out the lock file and creating some version-specific metadata.
+    // Making sure the lock exists.
     let lockpath = project + "/" + version + "/..LOCK";
-    let index_time = Date.now();
     {
         let lck = s3.getObject({ Bucket: bucket_name, Key: lockpath });
-        let lockinfo;
-        
         try {
-            lockinfo = await lck.promise();
+            await lck.promise();
         } catch (e) {
             throw new Error("failed to acquire the lock file for this project version");
         }
-        let lockmeta = JSON.parse(lockinfo.Body.toString());
+    }
 
+    // Creating some version-specific metadata.
+    let index_time = Date.now();
+    {
         let version_meta = {
             upload_time: (new Date(body.timestamp)).toISOString(),
             index_time: (new Date(index_time)).toISOString()
         };
 
-        if ("expiry" in lockmeta) {
-            version_meta.expiry_time = (new Date(index_time + lockmeta.expiry)).toISOString();
+        // Adding an expiry job and metadata, if we find an expiry file.
+        let exp = s3.getObject({ Bucket: bucket_name, Key: project + "/" + version + "/..expiry.json" });
+        let expinfo = null;
+        try {
+            expinfo = await exp.promise();
+        } catch (e) {
+            if (e.statusCode != 404) {
+                throw e;
+            }
+        }
+        if (expinfo !== null) {
+            let expval = expinfo.json();
+            version_meta.expiry_time = (new Date(index_time + expval.expires_in)).toISOString();
             let res = await fetch("https://api.github.com/repos/" + repo_name + "/issues", {
                 method: "POST",
                 body: JSON.stringify({ 
-                    "title": "purge expired", 
-                    "body": { 
+                    "title": "purge project", 
+                    "body": JSON.stringify({ 
                         project: project,
                         version: version,
-                        expiry_time: version_meta.expiry_time,
-                        uploaded_by: lockmeta.user
-                    }
+                        mode: "expiry",
+                        delete_after: version_meta.expiry_time
+                    })
                 }),
                 headers: { 
                     "Content-Type": "application/json",
@@ -109,7 +121,7 @@ try {
 
     // Listing all JSON files so we can pull them down in one big clump for each project.
     {
-        let params = { Bucket: bucket_name, Prefix: project + "/" + version };
+        let params = { Bucket: bucket_name, Prefix: project + "/" + version + "/" };
 
         let aggregated = [];
         while (1) {
@@ -204,10 +216,7 @@ try {
 
     // Deleting the lock file.
     {
-        let res = s3.deleteObject({ 
-            Bucket: bucket_name,
-            Key: lockpath
-        });
+        let res = s3.deleteObject({ Bucket: bucket_name, Key: lockpath });
         await res.promise();
     }
 
