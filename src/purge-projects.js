@@ -16,6 +16,7 @@
 
 import S3 from 'aws-sdk/clients/s3.js';
 import "isomorphic-fetch";
+process.exitCode = 1;
 
 if (!process.env.R2_ACCOUNT_ID || 
         !process.env.R2_ACCESS_KEY_ID || 
@@ -167,4 +168,4 @@ while (1) {
     }
 }
 
-
+process.exitCode = 0;

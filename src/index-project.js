@@ -22,6 +22,7 @@ import S3 from 'aws-sdk/clients/s3.js';
 import * as fs from "fs";
 import "isomorphic-fetch";
 import * as utils from "./utils.js";
+process.exitCode = 1;
 
 if (!process.env.R2_ACCOUNT_ID || 
         !process.env.R2_ACCESS_KEY_ID || 
@@ -210,3 +211,6 @@ try {
         } 
     });
 }
+
+process.exitCode = 0;
+
