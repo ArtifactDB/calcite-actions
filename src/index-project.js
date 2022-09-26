@@ -164,7 +164,7 @@ try {
             if (!(lat_info.index_time > 0)) {
                 throw new Error("latest file should contain a positive 'index_time'");
             }
-            if (latinfo.index_time < index_time) {
+            if (lat_info.index_time < index_time) {
                 relatest = true;
             }
         } catch (e) {
