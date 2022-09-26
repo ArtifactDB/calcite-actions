@@ -21,6 +21,7 @@
 import S3 from 'aws-sdk/clients/s3.js';
 import * as fs from "fs";
 import "isomorphic-fetch";
+import * as utils from "./utils.js";
 
 if (!process.env.R2_ACCOUNT_ID || 
         !process.env.R2_ACCESS_KEY_ID || 
@@ -58,7 +59,7 @@ try {
     // Making sure the lock exists.
     let lockpath = project + "/" + version + "/..LOCK";
     {
-        let lck = s3.getObject({ Bucket: bucket_name, Key: lockpath });
+        let lck = s3.headObject({ Bucket: bucket_name, Key: lockpath });
         try {
             await lck.promise();
         } catch (e) {
@@ -75,18 +76,9 @@ try {
         };
 
         // Adding an expiry job and metadata, if we find an expiry file.
-        let exp = s3.getObject({ Bucket: bucket_name, Key: project + "/" + version + "/..expiry.json" });
-        let expinfo = null;
-        try {
-            expinfo = await exp.promise();
-        } catch (e) {
-            if (e.statusCode != 404) {
-                throw e;
-            }
-        }
-        if (expinfo !== null) {
-            let expval = expinfo.json();
-            version_meta.expiry_time = (new Date(index_time + expval.expires_in)).toISOString();
+        let exp_info = await utils.getJson(s3, bucket_name, project + "/" + version + "/..expiry.json");
+        if (exp_info !== null) {
+            version_meta.expiry_time = (new Date(index_time + exp_info.expires_in)).toISOString();
             let res = await fetch("https://api.github.com/repos/" + repo_name + "/issues", {
                 method: "POST",
                 body: JSON.stringify({ 
@@ -110,13 +102,7 @@ try {
             version_meta.expiry_job_id = payload.number;
         }
 
-        let res = s3.putObject({
-            Bucket: bucket_name,
-            Key: project + "/" + version + "/..revision.json",
-            Body: JSON.stringify(version_meta),
-            ContentType: "application/json"
-        });
-        promises.push(res.promise());
+        promises.push(utils.putJson(s3, bucket_name, project + "/" + version + "/..revision.json", version_meta));
     }
 
     // Listing all JSON files so we can pull them down in one big clump for each project.
@@ -129,11 +115,9 @@ try {
             let info = await listing.promise();
 
             for (const f of info.Contents) {
-                if (!f.Key.endsWith(".json")) {
-                    continue;
+                if (f.Key.endsWith(".json")) {
+                    aggregated.push(utils.getJson(s3, bucket_name, f.Key));
                 }
-                let res = s3.getObject({ Bucket: bucket_name, Key: f.Key });
-                aggregated.push(res.promise().then(stuff => JSON.parse(stuff.Body.toString())));
             }
 
             if (info.IsTruncated) {
@@ -144,13 +128,7 @@ try {
         }
 
         let resolved = await Promise.all(aggregated);
-        let res = s3.putObject({ 
-            Bucket: bucket_name, 
-            Key: project + "/" + version + "/..aggregated.json", 
-            Body: JSON.stringify(resolved), 
-            ContentType: "application/json" 
-        });
-        promises.push(res.promise());
+        promises.push(utils.putJson(s3, bucket_name, project + "/" + version + "/..aggregated.json", resolved));
     }
 
     // Checking if permissions exist for the project; if not, we save them.
@@ -159,8 +137,8 @@ try {
         let permpath = project + "/..permissions.json";
 
         if (!overwrite) {
+            let res = s3.headObject({ Bucket: bucket_name, Key: permpath });
             try {
-                let res = s3.headObject({ Bucket: bucket_name, Key: permpath });
                 await res.promise();
             } catch (e) {
                 if (e.statusCode == 404) {
@@ -172,13 +150,7 @@ try {
         }
 
         if (overwrite) {
-            let res = s3.putObject({ 
-                Bucket: bucket_name, 
-                Key: permpath,
-                Body: JSON.stringify(body.permissions), 
-                ContentType: "application/json" 
-            });
-            promises.push(res.promise());
+            promises.push(utils.putJson(s3, bucket_name, permpath, body.permissions));
         }
     }
 
@@ -188,8 +160,10 @@ try {
         let relatest = false;
 
         try {
-            let lat = s3.getObject({ Bucket: bucket_name, Key: latestpath });
-            let latinfo = await lat.promise();
+            let lat_info = await utils.getJson(s3, bucket_name, latestpath);
+            if (!(lat_info.index_time > 0)) {
+                throw new Error("latest file should contain a positive 'index_time'");
+            }
             if (latinfo.index_time < index_time) {
                 relatest = true;
             }
@@ -202,13 +176,7 @@ try {
         }
 
         if (relatest) {
-            let res = s3.putObject({
-                Bucket: bucket_name,
-                Key: latestpath,
-                Body: JSON.stringify({  version: version, index_time: index_time }),
-                ContentType: "application/json"
-            });
-            promises.push(res.promise());
+            promises.push(utils.putJson(s3, bucket_name, latestpath, { version: version, index_time: index_time }));
         }
     }
 
