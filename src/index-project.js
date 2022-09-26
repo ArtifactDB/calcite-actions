@@ -79,7 +79,8 @@ try {
         // Adding an expiry job and metadata, if we find an expiry file.
         let exp_info = await utils.getJson(s3, bucket_name, project + "/" + version + "/..expiry.json");
         if (exp_info !== null) {
-            version_meta.expiry_time = (new Date(index_time + exp_info.expires_in)).toISOString();
+            let expired = index_time + exp_info.expires_in;
+            version_meta.expiry_time = (new Date(expired)).toISOString();
             let res = await fetch("https://api.github.com/repos/" + repo_name + "/issues", {
                 method: "POST",
                 body: JSON.stringify({ 
@@ -88,7 +89,7 @@ try {
                         project: project,
                         version: version,
                         mode: "expiry",
-                        delete_after: version_meta.expiry_time
+                        delete_after: expired
                     })
                 }),
                 headers: { 
