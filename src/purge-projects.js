@@ -56,7 +56,7 @@ async function close_issue(issue_number) {
 // Only considering issues that were created by the same bot account.
 let bot_res = await fetch("https://api.github.com/user", { headers: { Authorization: "Bearer " + token } });
 let bot_id = (await bot_res.json()).login;
-let list_url = "https://api.github.com/repos/" + repo_name + "/issues?direction=asc&creator=" + bot_id + "&state=all";
+let list_url = "https://api.github.com/repos/" + repo_name + "/issues?direction=asc&creator=" + bot_id + "&state=open";
 
 while (1) {
     let res = await fetch(list_url, {
