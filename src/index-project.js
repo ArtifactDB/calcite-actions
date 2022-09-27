@@ -21,7 +21,10 @@
 import S3 from 'aws-sdk/clients/s3.js';
 import * as fs from "fs";
 import "isomorphic-fetch";
+
 import * as utils from "./utils.js";
+import * as internal from "./internal.js";
+
 process.exitCode = 1;
 
 if (!process.env.R2_ACCOUNT_ID || 
@@ -58,7 +61,7 @@ try {
     let promises = [];
 
     // Making sure the lock exists.
-    let lockpath = project + "/" + version + "/..LOCK";
+    let lockpath = internal.lock(project, version);
     {
         let lck = s3.headObject({ Bucket: bucket_name, Key: lockpath });
         try {
@@ -70,6 +73,7 @@ try {
 
     // Creating some version-specific metadata.
     let index_time = Date.now();
+    let has_expiry = false;
     {
         let version_meta = {
             upload_time: (new Date(body.timestamp)).toISOString(),
@@ -77,8 +81,9 @@ try {
         };
 
         // Adding an expiry job and metadata, if we find an expiry file.
-        let exp_info = await utils.getJson(s3, bucket_name, project + "/" + version + "/..expiry.json");
-        if (exp_info !== null) {
+        let exp_info = await utils.getJson(s3, bucket_name, internal.expiry(project, version));
+        has_expiry = (exp_info !== null);
+        if (has_expiry) {
             let expired = index_time + exp_info.expires_in;
             version_meta.expiry_time = (new Date(expired)).toISOString();
             let res = await fetch("https://api.github.com/repos/" + repo_name + "/issues", {
@@ -104,7 +109,7 @@ try {
             version_meta.expiry_job_id = payload.number;
         }
 
-        promises.push(utils.putJson(s3, bucket_name, project + "/" + version + "/..revision.json", version_meta));
+        promises.push(utils.putJson(s3, bucket_name, internal.versionMetadata(project, version), version_meta));
     }
 
     // Listing all JSON files so we can pull them down in one big clump for each project.
@@ -130,13 +135,13 @@ try {
         }
 
         let resolved = await Promise.all(aggregated);
-        promises.push(utils.putJson(s3, bucket_name, project + "/" + version + "/..aggregated.json", resolved));
+        promises.push(utils.putJson(s3, bucket_name, internal.aggregated(project, version), resolved));
     }
 
     // Checking if permissions exist for the project; if not, we save them.
     {
         let overwrite = body.overwrite_permissions;
-        let permpath = project + "/..permissions.json";
+        let permpath = internal.permissions(project);
 
         if (!overwrite) {
             let res = s3.headObject({ Bucket: bucket_name, Key: permpath });

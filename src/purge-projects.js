@@ -16,7 +16,10 @@
 
 import S3 from 'aws-sdk/clients/s3.js';
 import "isomorphic-fetch";
+
 import * as utils from "./utils.js";
+import * as internal from "./internal.js";
+
 process.exitCode = 1;
 
 if (!process.env.R2_ACCOUNT_ID || 
@@ -72,7 +75,7 @@ while (1) {
         let version = payload.version;
 
         if (payload.mode == "incomplete") {
-            let lockpath = project + "/" + version + "/..LOCK";
+            let lockpath = internal.lock(project, version);
             let lck = s3.headObject({ Bucket: bucket_name, Key: lockpath });
 
             let lock_exists = true;
@@ -185,7 +188,7 @@ for (const project of Array.from(redefine_latest)) {
     }
 
     let all_promises = all_versions.map(async version => {
-        let lockpath = project + "/" + version + "/..LOCK";
+        let lockpath = internal.lock(project, version);
         let lck = s3.headObject({ Bucket: bucket_name, Key: lockpath });
 
         let lock_exists = true;
@@ -203,7 +206,7 @@ for (const project of Array.from(redefine_latest)) {
             return { version: "", index_time: -1 };
         }
 
-        let rmeta = s3.getObject({ Bucket: bucket_name, Key: project + "/" + version + "/..revision.json" });
+        let rmeta = s3.getObject({ Bucket: bucket_name, Key: internal.versionMetadata(project, version) });
         let rinfo = await rmeta.promise().then(x => JSON.parse(x.Body.toString()));
         return { version: version, index_time: (new Date(rinfo.index_time)).getTime() };
     });
