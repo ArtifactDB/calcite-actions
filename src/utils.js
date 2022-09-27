@@ -1,3 +1,5 @@
+import "isomorphic-fetch";
+
 export async function getJson(s3, bucket_name, key) {
     let req = s3.getObject({ Bucket: bucket_name, Key: key });
     let res = null;
@@ -29,4 +31,15 @@ export function getLatestPath(project) {
 
 export function formatLatest(version, index_time) {
     return { version: version, index_time: index_time };
+}
+
+export async function closeIssue(repo_name, issue_number, token) {
+    return fetch("https://api.github.com/repos/" + repo_name + "/issues/" + issue_number, { 
+        method: "PATCH",
+        body: JSON.stringify({ "state": "closed" }),
+        headers: { 
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + token
+        } 
+    });
 }

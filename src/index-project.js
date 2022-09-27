@@ -158,7 +158,7 @@ try {
 
     // Checking if we are, indeed, the latest.
     {
-        let latestpath = project + "/..latest.json";
+        let latestpath = utils.getLatestPath(project);
         let relatest = false;
 
         try {
@@ -178,7 +178,7 @@ try {
         }
 
         if (relatest) {
-            promises.push(utils.putJson(s3, bucket_name, latestpath, { version: version, index_time: index_time }));
+            promises.push(utils.putJson(s3, bucket_name, latestpath, utils.formatLatest(version, index_time)));
         }
     }
 
@@ -191,14 +191,7 @@ try {
     }
 
     // Closing the issue once we're successfully done.
-    await fetch("https://api.github.com/repos/" + repo_name + "/issues/" + issue_number, { 
-        method: "PATCH",
-        body: JSON.stringify({ "state": "closed" }),
-        headers: { 
-            "Content-Type": "application/json",
-            Authorization: "Bearer " + token
-        } 
-    });
+    await utils.closeIssue(repo_name, issue_number, token);
 
 } catch (e) {
     // Commenting on the issue.

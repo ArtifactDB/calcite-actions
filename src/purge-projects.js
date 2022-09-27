@@ -43,17 +43,6 @@ if (process.argv.length - 2 != 2) {
 const bucket_name = process.argv[2];
 const repo_name = process.argv[3];
 
-async function close_issue(issue_number) {
-    await fetch("https://api.github.com/repos/" + repo_name + "/issues/" + issue_number, { 
-        method: "PATCH",
-        body: JSON.stringify({ "state": "closed" }),
-        headers: { 
-            "Content-Type": "application/json",
-            Authorization: "Bearer " + token
-        } 
-    });
-}
-
 // Only considering issues that were created by the same bot account.
 let bot_res = await fetch("https://api.github.com/user", { headers: { Authorization: "Bearer " + token } });
 let bot_id = (await bot_res.json()).login;
@@ -100,8 +89,8 @@ while (1) {
             if (!lock_exists) {
                 // If the lock no longer exists, then this issue is void,
                 // so we just close it without issue.
+                utils.closeIssue(repo_name, issue.number, token);
                 console.log("Closing issue " + String(issue.number) + " for completed project")
-                close_issue(issue.number);
                 continue;
             }
 
@@ -149,7 +138,7 @@ while (1) {
         let wiped = to_wipe.map(x => s3.deleteObject({ Bucket: bucket_name, Key: x }).promise());
         await Promise.all(wiped);
 
-        close_issue(issue.number);
+        utils.closeIssue(repo_name, issue.number, token);
         console.log("Closing issue " + String(issue.number) + " for deleted project")
     }
 
