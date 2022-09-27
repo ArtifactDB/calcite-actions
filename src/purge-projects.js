@@ -214,7 +214,6 @@ for (const project of Array.from(redefine_latest)) {
     let all_resolved = await Promise.all(all_promises);
     all_resolved.sort((a, b) => b.index_time - a.index_time);
 
-    let latestpath = utils.getLatestPath(project);
     let latestinfo = {};
     if (all_resolved.length) {
         let chosen = all_resolved[0];
@@ -222,7 +221,8 @@ for (const project of Array.from(redefine_latest)) {
     } else {
         latestinfo = utils.formatLatest("", -1);
     }
-    await utils.putJson(s3, bucket_name, latestpath, latestinfo)
+
+    await utils.putJson(s3, bucket_name, internal.latestAll(project), latestinfo)
 }
 
 process.exitCode = 0;

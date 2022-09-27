@@ -58,7 +58,7 @@ try {
     let body = JSON.parse(fs.readFileSync(param_path).toString());
     let project = body.project;
     let version = body.version;
-    let promises = [];
+    let writes = [];
 
     // Making sure the lock exists.
     let lockpath = internal.lock(project, version);
@@ -109,7 +109,7 @@ try {
             version_meta.expiry_job_id = payload.number;
         }
 
-        promises.push(utils.putJson(s3, bucket_name, internal.versionMetadata(project, version), version_meta));
+        writes.push(utils.putJson(s3, bucket_name, internal.versionMetadata(project, version), version_meta));
     }
 
     // Listing all JSON files so we can pull them down in one big clump for each project.
@@ -135,7 +135,7 @@ try {
         }
 
         let resolved = await Promise.all(aggregated);
-        promises.push(utils.putJson(s3, bucket_name, internal.aggregated(project, version), resolved));
+        writes.push(utils.putJson(s3, bucket_name, internal.aggregated(project, version), resolved));
     }
 
     // Checking if permissions exist for the project; if not, we save them.
@@ -157,37 +157,47 @@ try {
         }
 
         if (overwrite) {
-            promises.push(utils.putJson(s3, bucket_name, permpath, body.permissions));
+            writes.push(utils.putJson(s3, bucket_name, permpath, body.permissions));
         }
     }
 
-    // Checking if we are, indeed, the latest.
+    // Checking if we are, indeed, the latest. 
     {
-        let latestpath = utils.getLatestPath(project);
-        let relatest = false;
+        async function fill_latest(l, v, i) {
+            let relatest = false;
+            let lat_info = await utils.getJson(s3, bucket_name, l);
 
-        try {
-            let lat_info = await utils.getJson(s3, bucket_name, latestpath);
-            if (!(lat_info.index_time > 0)) {
-                throw new Error("latest file should contain a positive 'index_time'");
-            }
-            if (lat_info.index_time < index_time) {
-                relatest = true;
-            }
-        } catch (e) {
-            if (e.statusCode == 404) {
+            if (lat_info == null) {
                 relatest = true;
             } else {
-                throw e;
+                if (typeof lat_info.index_time != "number") {
+                    throw new Error("latest file should contain a 'index_time' number");
+                }
+                if (lat_info.index_time < i) {
+                    relatest = true;
+                }
+            } 
+
+            if (relatest) {
+                writes.push(utils.putJson(s3, bucket_name, l, utils.formatLatest(v, i)));
             }
         }
 
-        if (relatest) {
-            promises.push(utils.putJson(s3, bucket_name, latestpath, utils.formatLatest(version, index_time)));
+        // If it's expirable, then we only write to '..latest' if no file is present.
+        // Permanent objects take precedence in the aliasing. If it's not expirable,
+        // then we _might_ write it if it's the most recent version.
+        let latestpath = internal.latest(project);
+        if (has_expiry) {
+            await fill_latest(latestpath, "", -1);
+        } else {
+            await fill_latest(latestpath, version, index_time);
         }
+
+        // For 'latest_all', we consider both transient and permanent objects.
+        await fill_latest(internal.latestAll(project), version, index_time);
     }
 
-    await Promise.all(promises);
+    await Promise.all(writes);
 
     // Deleting the lock file.
     {
