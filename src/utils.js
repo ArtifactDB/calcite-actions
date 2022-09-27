@@ -22,3 +22,11 @@ export async function putJson(s3, bucket_name, key, value) {
     });
     return res.promise();
 }
+
+export function getLatestPath(project) {
+    return project + "/..latest.json";
+}
+
+export function formatLatest(version, index_time) {
+    return { version: version, index_time: index_time };
+}

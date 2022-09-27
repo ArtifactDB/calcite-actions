@@ -16,6 +16,7 @@
 
 import S3 from 'aws-sdk/clients/s3.js';
 import "isomorphic-fetch";
+import * as utils from "./utils.js";
 process.exitCode = 1;
 
 if (!process.env.R2_ACCOUNT_ID || 
@@ -58,6 +59,8 @@ let bot_res = await fetch("https://api.github.com/user", { headers: { Authorizat
 let bot_id = (await bot_res.json()).login;
 let list_url = "https://api.github.com/repos/" + repo_name + "/issues?direction=asc&creator=" + bot_id + "&state=open";
 
+let redefine_latest = new Set;
+
 while (1) {
     let res = await fetch(list_url, {
         headers: { 
@@ -93,7 +96,7 @@ while (1) {
                     throw e;
                 }
             }
-            
+
             if (!lock_exists) {
                 // If the lock no longer exists, then this issue is void,
                 // so we just close it without issue.
@@ -118,6 +121,7 @@ while (1) {
                 console.log("Skipping issue " + String(issue.number) + " for non-expired project")
                 continue;
             }
+            redefine_latest.add(project);
 
         } else {
             throw new Error("one of 'locked_only' or 'expires_in' must be set");
@@ -166,6 +170,67 @@ while (1) {
     } else {
         break;
     }
+}
+
+// Redefine the latest versions.
+for (const project of Array.from(redefine_latest)) {
+    let params = { Bucket: bucket_name, Prefix: project + "/", Delimiter: "/" };
+
+    let all_versions = [];
+    while (1) {
+        let listing = s3.listObjectsV2(params)
+        let info = await listing.promise();
+
+        for (const f of info.CommonPrefixes) {
+            if (!f.Prefix.endsWith(".json")) {
+                let fragments = f.Prefix.split("/");
+                all_versions.push(fragments[fragments.length - 2]);
+            }
+        }
+
+        if (info.IsTruncated) {
+            params.ContinuationToken = info.NextContinuationToken;
+        } else {
+            break;
+        }
+    }
+
+    let all_promises = all_versions.map(async version => {
+        let lockpath = project + "/" + version + "/..LOCK";
+        let lck = s3.headObject({ Bucket: bucket_name, Key: lockpath });
+
+        let lock_exists = true;
+        try {
+            await lck.promise();
+        } catch(e) {
+            if (e.statusCode == 404) {
+                lock_exists = false;
+            } else {
+                throw e;
+            }
+        }
+
+        if (lock_exists) {
+            return { version: "", index_time: -1 };
+        }
+
+        let rmeta = s3.getObject({ Bucket: bucket_name, Key: project + "/" + version + "/..revision.json" });
+        let rinfo = await rmeta.promise().then(x => JSON.parse(x.Body.toString()));
+        return { version: version, index_time: (new Date(rinfo.index_time)).getTime() };
+    });
+
+    let all_resolved = await Promise.all(all_promises);
+    all_resolved.sort((a, b) => b.index_time - a.index_time);
+
+    let latestpath = utils.getLatestPath(project);
+    let latestinfo = {};
+    if (all_resolved.length) {
+        let chosen = all_resolved[0];
+        latestinfo = utils.formatLatest(chosen.version, chosen.index_time);
+    } else {
+        latestinfo = utils.formatLatest("", -1);
+    }
+    await utils.putJson(s3, bucket_name, latestpath, latestinfo)
 }
 
 process.exitCode = 0;
