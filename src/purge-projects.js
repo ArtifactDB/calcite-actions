@@ -51,6 +51,7 @@ let bot_res = await fetch("https://api.github.com/user", { headers: { Authorizat
 let bot_id = (await bot_res.json()).login;
 let list_url = "https://api.github.com/repos/" + repo_name + "/issues?direction=asc&creator=" + bot_id + "&state=open";
 
+let to_delete = {};
 let redefine_latest = new Set;
 
 while (1) {
@@ -93,7 +94,7 @@ while (1) {
                 // If the lock no longer exists, then this issue is void,
                 // so we just close it without issue.
                 utils.closeIssue(repo_name, issue.number, token);
-                console.log("Closing issue " + String(issue.number) + " for completed project")
+                console.log("Closing issue " + String(issue.number) + " for completed project '" + project + "', version '" + version + "'")
                 continue;
             }
 
@@ -101,7 +102,7 @@ while (1) {
                 throw new Error("invalid 'delete_after' for issue " + String(issue.number))
             }
             if (Date.now() < payload.delete_after) {
-                console.log("Skipping issue " + String(issue.number) + " for in-progress project")
+                console.log("Skipping issue " + String(issue.number) + " for in-progress project '" + project + "', version '" + version + "'")
                 continue;
             }
 
@@ -110,39 +111,19 @@ while (1) {
                 throw new Error("invalid 'delete_after' for issue " + String(issue.number))
             }
             if (Date.now() < payload.delete_after) {
-                console.log("Skipping issue " + String(issue.number) + " for non-expired project")
+                console.log("Skipping issue " + String(issue.number) + " for non-expired project '" + project + "', version '" + version + "'")
                 continue;
             }
             redefine_latest.add(project);
 
         } else {
-            throw new Error("one of 'locked_only' or 'expires_in' must be set");
+            throw new Error("one of 'locked_only' or 'expires_in' must be set in issue " + String(issue.number));
         }
 
-        // Looping over list contents before deleting to avoid shenanigans with mutable read/write.
-        let params = { Bucket: bucket_name, Prefix: project + "/" + version + "/" };
-
-        let to_wipe = [];
-        while (1) {
-            let listing = s3.listObjectsV2(params)
-            let info = await listing.promise();
-
-            for (const f of info.Contents) {
-                to_wipe.push(f.Key);
-            }
-
-            if (info.IsTruncated) {
-                params.ContinuationToken = info.NextContinuationToken;
-            } else {
-                break;
-            }
+        if (!(project in to_delete)) {
+            to_delete[project] = [];
         }
-
-        let wiped = to_wipe.map(x => s3.deleteObject({ Bucket: bucket_name, Key: x }).promise());
-        await Promise.all(wiped);
-
-        utils.closeIssue(repo_name, issue.number, token);
-        console.log("Closing issue " + String(issue.number) + " for deleted project")
+        to_delete[project].push({ version: version, issue: issue.number });
     }
 
     // Handling paginated listings.
@@ -164,9 +145,11 @@ while (1) {
     }
 }
 
-// Redefine the latest versions.
+// Redefine the latest versions before deleting. This is necessary to avoid a
+// brief period where the latest version points to a deleted entry.
 for (const project of Array.from(redefine_latest)) {
     let params = { Bucket: bucket_name, Prefix: project + "/", Delimiter: "/" };
+    let invalid = new Set(to_delete[project].map(x => x.version));
 
     let all_versions = [];
     while (1) {
@@ -176,7 +159,10 @@ for (const project of Array.from(redefine_latest)) {
         for (const f of info.CommonPrefixes) {
             if (!f.Prefix.endsWith(".json")) {
                 let fragments = f.Prefix.split("/");
-                all_versions.push(fragments[fragments.length - 2]);
+                let curversion = fragments[fragments.length - 2];
+                if (!invalid.has(curversion)) {
+                    all_versions.push(curversion);
+                }
             }
         }
 
@@ -223,6 +209,39 @@ for (const project of Array.from(redefine_latest)) {
     }
 
     await utils.putJson(s3, bucket_name, internal.latestAll(project), latestinfo)
+    console.log("Updating latest version for '" + project + "'");
+}
+
+// Finally going on to delete all the entries.
+for (const [project, jobs] of Object.entries(to_delete)) {
+    for (const info of jobs) {
+        let version = info.version;
+
+        // Looping over list contents before deleting to avoid shenanigans with mutable read/write.
+        let params = { Bucket: bucket_name, Prefix: project + "/" + version + "/" };
+
+        let to_wipe = [];
+        while (1) {
+            let listing = s3.listObjectsV2(params)
+            let info = await listing.promise();
+
+            for (const f of info.Contents) {
+                to_wipe.push(f.Key);
+            }
+
+            if (info.IsTruncated) {
+                params.ContinuationToken = info.NextContinuationToken;
+            } else {
+                break;
+            }
+        }
+
+        let wiped = to_wipe.map(x => s3.deleteObject({ Bucket: bucket_name, Key: x }).promise());
+        await Promise.all(wiped);
+
+        utils.closeIssue(repo_name, info.issue, token);
+        console.log("Closing issue " + String(info.issue) + " for deleted project '" + project + "', version '" + version + "'");
+    }
 }
 
 process.exitCode = 0;

@@ -183,10 +183,10 @@ try {
             }
         }
 
-        // If it's expirable, then we only write to '..latest' if no file is present.
-        // Permanent objects take precedence in the aliasing. If it's not expirable,
-        // then we _might_ write it if it's the most recent version.
-        let latestpath = internal.latest(project);
+        // If it's expirable, then we only write to '..latest' if no file is
+        // present, and even then, it's just a placeholder. Any permanent
+        // object takes precedence in the aliasing. 
+        let latestpath = internal.latestPersistent(project);
         if (has_expiry) {
             await fill_latest(latestpath, "", -1);
         } else {
