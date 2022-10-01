@@ -24,10 +24,26 @@ jobs:
       - name: Install required packages
         run: npm i
 
+      - name: Cache schemas 
+        id: cache-schemas
+        uses: actions/cache@v3
+        with:
+          path: schemas/
+          key: schemas-${{ hashFiles('**/config.sh') }}
+
+      - name: Download schemas
+        if: steps.cache-schemas.outputs.cache-hit != 'true'
+        run: |
+          source config.sh
+          wget $SCHEMA_BUNDLE_URL -O bundle.tar.gz
+          tar -xvf bundle.tar.gz
+          mv resolved schemas/
+
       - name: Index project
         run: |
+            source config.sh
             echo '${{ github.event.issue.body }}' > parameters.json
-            node src/index-project.js gypsum-test ${{ github.repository }} ${{ github.event.issue.number }} parameters.json
+            node src/index-project.js $R2_BUCKET_NAME ${{ github.repository }} ${{ github.event.issue.number }} parameters.json schemas
         env:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}

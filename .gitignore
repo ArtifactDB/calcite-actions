@@ -3,3 +3,4 @@ secrets.sh
 *.swp
 parameters.json
 scratch.js
+schemas/

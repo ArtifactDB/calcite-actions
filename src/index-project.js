@@ -1,14 +1,14 @@
 /**
  * Index a version of a gypsum project. This mostly involves creating some
- * summary JSON files for each project version, given that gypsum doesn't have
- * any search capabilities.
+ * summary JSON files for each project version, as well as checking that 
+ * the JSON documents supplied can be correctly indexed.
  *
  * We expect the following environment variables to be available:
  *
  * - R2_ACCOUNT_ID, the account id for Cloudflare's R2 storage.
  * - R2_ACCESS_KEY_ID, an authorized API key for Cloudflare R2 operations.
  * - R2_SECRET_ACCESS_KEY, an authorized API secret for Cloudflare R2 operations.
- * - GITHUB_TOKEN, a token with read access to the GitHub CI repository reunning this script.
+ * - GH_BOT_TOKEN, a token with read access to the GitHub CI repository reunning this script.
  *
  * In addition, we expect the following command-line variables:
  *
@@ -16,11 +16,13 @@
  * 2. The full name (owner/repo) of the GitHub CI repository (i.e., the one containing this script).
  * 3. The issue number.
  * 4. A path to a file containing the indexing parameters: this is typically the issue body.
+ * 5. A path to a directory containing the known set of schemas.
  */
 
 import S3 from 'aws-sdk/clients/s3.js';
 import * as fs from "fs";
 import "isomorphic-fetch";
+import Ajv from "ajv"
 
 import * as utils from "./utils.js";
 import * as internal from "./internal.js";
@@ -45,13 +47,14 @@ if (!token) {
     throw new Error("missing GitHub bot token");
 }
 
-if (process.argv.length - 2 != 4) {
-    throw new Error("expected 4 arguments - BUCKET_NAME, REPO_NAME, ISSUE_NUMBER, PARAMETER_PATH");
+if (process.argv.length - 2 != 5) {
+    throw new Error("expected 5 arguments - BUCKET_NAME, REPO_NAME, ISSUE_NUMBER, PARAMETER_PATH, SCHEMA_DIRECTORY");
 }
 const bucket_name = process.argv[2];
 const repo_name = process.argv[3];
 const issue_number = process.argv[4]; 
 const param_path = process.argv[5]; 
+const schema_dir = process.argv[6];
 
 try {
     // Fetching the issue data.
@@ -112,17 +115,23 @@ try {
         writes.push(utils.putJson(s3, bucket_name, internal.versionMetadata(project, version), version_meta));
     }
 
-    // Listing all JSON files so we can pull them down in one big clump for each project.
+    // Listing all JSON files so we can pull them down, validate them, and aggregate them into one big clump for each project.
     {
         let params = { Bucket: bucket_name, Prefix: project + "/" + version + "/" };
 
         let aggregated = [];
+        let self_names = [];
+        let everything = new Set;
+
         while (1) {
             let listing = s3.listObjectsV2(params)
             let info = await listing.promise();
 
             for (const f of info.Contents) {
-                if (f.Key.endsWith(".json")) {
+                let relpath = f.Key.split("/").slice(2).join("/");
+                everything.add(relpath);
+                if (relpath.endsWith(".json")) {
+                    self_names.push(relpath);
                     aggregated.push(utils.getJson(s3, bucket_name, f.Key));
                 }
             }
@@ -135,6 +144,51 @@ try {
         }
 
         let resolved = await Promise.all(aggregated);
+
+        const ajv = new Ajv();
+        let loaded_schemas = {};
+        let metadata_only = {};
+
+        for (var i = 0; i < resolved.length; i++) {
+            let doc = resolved[i];
+            let schema = doc["$schema"];
+
+            if (!(schema in loaded_schemas)) {
+                let schema_path = schema_dir + "/" + schema;
+                if (!fs.existsSync(schema_path)) {
+                    throw new Error("requested schema '" + schema + "' does not exist");
+                }
+
+                let body = JSON.parse(fs.readFileSync(schema_path).toString());
+                loaded_schemas[schema] = ajv.compile(body);
+
+                metadata_only[schema] = false;
+                if ("_attributes" in body) {
+                    if ("metadata_only" in body["_attributes"]) {
+                        metadata_only[schema] = body["_attributes"]["metadata_only"];
+                    }
+                }
+            }
+
+            let validator = loaded_schemas[schema];
+            if (!validator(doc)) {
+                console.warn(validator);
+                throw new Error("schema validation failed for '" + doc.path + "': " + validator.errors[0].message + " (" + validator.errors[0].schemaPath + ")");
+            }
+
+            let self_path = self_names[i];
+            let expected = self_names[i];
+            if (!metadata_only[schema]) {
+                expected = expected.slice(0, self_path.length - 5); // remove JSON suffix.
+            }
+            if (expected != doc["path"]) {
+                throw new Error("metadata for '" + self_path + "' has incorrect listed path '" + doc["path"] + "'");
+            }
+            if (!everything.has(expected)) {
+                throw new Error("listed path in '" + self_path + "' does not exist");
+            }
+        }
+
         writes.push(utils.putJson(s3, bucket_name, internal.aggregated(project, version), resolved));
     }
 
