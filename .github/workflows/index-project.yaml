@@ -35,9 +35,11 @@ jobs:
         if: steps.cache-schemas.outputs.cache-hit != 'true'
         run: |
           source config.sh
+          mkdir schemas
+          cd schemas
           wget $SCHEMA_BUNDLE_URL -O bundle.tar.gz
           tar -xvf bundle.tar.gz
-          mv resolved schemas/
+          rm -rf bundle.tar.gz
 
       - name: Index project
         run: |
