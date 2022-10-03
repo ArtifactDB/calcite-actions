@@ -1,18 +1,13 @@
 /**
- * Purge projects that have expired or are incomplete (and have expired).
+ * Purge projects that have expired, either due to exceeding the expiry time or
+ * being incomplete uploads that have passed the upload timeout.
  *
- * We expect the following environment variables to be available:
- *
- * - CF_ACCOUNT_ID, the Cloudflare account id.
- * - R2_ACCESS_KEY_ID, an authorized API key for Cloudflare R2 operations.
- * - R2_SECRET_ACCESS_KEY, an authorized API secret for Cloudflare R2 operations.
- * - GH_BOT_TOKEN, the token of the bot generating the purge messages.
- *
- * In addition, we expect the following command-line variables:
- *
- * 1. The name of the R2 bucket of interest.
- * 2. The full name (owner/repo) of the GitHub CI repository (i.e., the one containing this script).
+ * Run 'node --experimental-vm-modules src/purge-projects.js --help' for
+ * details on the expected arguments.
  */
+
+import yargs from "yargs";
+import { hideBin } from 'yargs/helpers';
 
 import S3 from 'aws-sdk/clients/s3.js';
 import "isomorphic-fetch";
@@ -22,29 +17,45 @@ import * as internal from "./internal.js";
 
 process.exitCode = 1;
 
-if (!process.env.CF_ACCOUNT_ID || 
-        !process.env.R2_ACCESS_KEY_ID || 
-        !process.env.R2_SECRET_ACCESS_KEY) {
-    throw new Error("missing R2 credentials");
-}
+const args = yargs(hideBin(process.argv))
+    .option("cfid", {
+        describe: "Cloudflare account ID",
+        type: "string"
+    })
+    .option("r2key", {
+        describe: "R2 API access key ID",
+        type: "string"
+    })
+    .option("r2secret", {
+        describe: "R2 API secret access key",
+        type: "string"
+    })
+    .option("r2bucket", {
+        describe: "R2 bucket name",
+        type: "string"
+    })
+    .option("ghrepo", {
+        describe: "GitHub repository name (OWNER/REPO)",
+        type: "string"
+    })
+    .option("ghtoken", {
+        describe: "GitHub bot personal access token",
+        type: "string"
+    })
+    .demandOption(["cfid", "r2key", "r2secret", "r2bucket", "ghtoken", "ghrepo" ])
+    .help()
+    .argv;
 
 const s3 = new S3({
-    endpoint: `https://${process.env.CF_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    accessKeyId: `${process.env.R2_ACCESS_KEY_ID}`,
-    secretAccessKey: `${process.env.R2_SECRET_ACCESS_KEY}`,
+    endpoint: "https://" + args.cfid + ".r2.cloudflarestorage.com",
+    accessKeyId: args.r2key,
+    secretAccessKey: args.r2secret,
     signatureVersion: 'v4',
 });
 
-const token = process.env.GH_BOT_TOKEN;
-if (!token) {
-    throw new Error("missing GitHub bot token");
-}
-
-if (process.argv.length - 2 != 2) {
-    throw new Error("expected 2 arguments - BUCKET_NAME, REPO_NAME");
-}
-const bucket_name = process.argv[2];
-const repo_name = process.argv[3];
+const token = args.ghtoken;
+const bucket_name = args.r2bucket;
+const repo_name = args.ghrepo;
 
 // Only considering issues that were created by the same bot account.
 let bot_res = await fetch("https://api.github.com/user", { headers: { Authorization: "Bearer " + token } });

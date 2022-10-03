@@ -42,10 +42,13 @@ jobs:
       - name: Index project
         run: |
             source config.sh
-            echo '${{ github.event.issue.body }}' > parameters.json
-            node src/index-project.js $R2_BUCKET_NAME ${{ github.repository }} ${{ github.event.issue.number }} parameters.json schemas
-        env:
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          GH_BOT_TOKEN: ${{ secrets.GH_BOT_TOKEN }}
-
+            node src/index-project.js \
+              --cfid $CF_ACCOUNT_ID \
+              --r2bucket $R2_BUCKET_NAME \
+              --r2key ${{ secrets.R2_ACCESS_KEY_ID }} \
+              --r2secret ${{ secrets.R2_SECRET_ACCESS_KEY }} \
+              --ghrepo ${{ github.repository }} \
+              --ghissue ${{ github.event.issue.number }} \
+              --ghtoken ${{ secrets.GH_BOT_TOKEN }} \
+              --parameters '${{ github.event.issue.body }}' \
+              --schemas schemas

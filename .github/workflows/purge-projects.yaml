@@ -25,9 +25,12 @@ jobs:
         run: npm i
 
       - name: Purge projects
-        run: node src/purge-projects.js gypsum-test ${{ github.repository }}
-        env:
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          GH_BOT_TOKEN: ${{ secrets.GH_BOT_TOKEN }}
-
+        run: |
+          source config.sh
+          node src/purge-projects.js \
+            --r2bucket gypsum-test \
+            --ghrepo ${{ github.repository }} \
+            --cfid $CF_ACCOUNT_ID \
+            --r2key ${{ secrets.R2_ACCESS_KEY_ID }} \
+            --r2secret ${{ secrets.R2_SECRET_ACCESS_KEY }} \
+            --ghtoken ${{ secrets.GH_BOT_TOKEN }}

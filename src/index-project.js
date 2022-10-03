@@ -1,23 +1,14 @@
 /**
  * Index a version of a gypsum project. This mostly involves creating some
- * summary JSON files for each project version, as well as checking that 
- * the JSON documents supplied can be correctly indexed.
+ * summary JSON files for each project version, as well as checking that the
+ * JSON documents supplied can be correctly indexed.
  *
- * We expect the following environment variables to be available:
- *
- * - CF_ACCOUNT_ID, the Cloudflare account id.
- * - R2_ACCESS_KEY_ID, an authorized API key for Cloudflare R2 operations.
- * - R2_SECRET_ACCESS_KEY, an authorized API secret for Cloudflare R2 operations.
- * - GH_BOT_TOKEN, a token with read access to the GitHub CI repository reunning this script.
- *
- * In addition, we expect the following command-line variables:
- *
- * 1. The name of the R2 bucket of interest.
- * 2. The full name (owner/repo) of the GitHub CI repository (i.e., the one containing this script).
- * 3. The issue number.
- * 4. A path to a file containing the indexing parameters: this is typically the issue body.
- * 5. A path to a directory containing the known set of schemas.
+ * Run 'node --experimental-vm-modules src/index-project.js --help' for 
+ * details on the expected arguments.
  */
+
+import yargs from "yargs";
+import { hideBin } from 'yargs/helpers';
 
 import S3 from 'aws-sdk/clients/s3.js';
 import * as fs from "fs";
@@ -29,36 +20,64 @@ import * as internal from "./internal.js";
 
 process.exitCode = 1;
 
-if (!process.env.CF_ACCOUNT_ID || 
-        !process.env.R2_ACCESS_KEY_ID || 
-        !process.env.R2_SECRET_ACCESS_KEY) {
-    throw new Error("missing R2 credentials");
-}
+const args = yargs(hideBin(process.argv))
+    .option("cfid", {
+        describe: "Cloudflare account ID",
+        type: "string"
+    })
+    .option("r2key", {
+        describe: "R2 API access key ID",
+        type: "string"
+    })
+    .option("r2secret", {
+        describe: "R2 API secret access key",
+        type: "string"
+    })
+    .option("r2bucket", {
+        describe: "R2 bucket name",
+        type: "string"
+    })
+    .option("ghrepo", {
+        describe: "GitHub repository name (OWNER/REPO)",
+        type: "string"
+    })
+    .option("ghtoken", {
+        describe: "GitHub bot personal access token",
+        type: "string"
+    })
+    .option("ghissue", {
+        describe: "GitHub issue triggering this script",
+        type: "number"
+    })
+    .option("parameters", {
+        describe: "JSON-formatted string containing the indexing parameters, usually the issue body",
+        type: "string"
+    })
+    .option("schemas", {
+        describe: "Path to a directory containing the schemas",
+        type: "string"
+    })
+    .demandOption(["cfid", "r2key", "r2secret", "r2bucket", "ghtoken", "ghissue", "ghrepo", "parameters", "schemas"])
+    .help()
+    .argv;
 
 const s3 = new S3({
-    endpoint: `https://${process.env.CF_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    accessKeyId: `${process.env.R2_ACCESS_KEY_ID}`,
-    secretAccessKey: `${process.env.R2_SECRET_ACCESS_KEY}`,
+    endpoint: "https://" + args.cfid + ".r2.cloudflarestorage.com",
+    accessKeyId: args.r2key,
+    secretAccessKey: args.r2secret,
     signatureVersion: 'v4',
 });
 
-const token = process.env.GH_BOT_TOKEN;
-if (!token) {
-    throw new Error("missing GitHub bot token");
-}
-
-if (process.argv.length - 2 != 5) {
-    throw new Error("expected 5 arguments - BUCKET_NAME, REPO_NAME, ISSUE_NUMBER, PARAMETER_PATH, SCHEMA_DIRECTORY");
-}
-const bucket_name = process.argv[2];
-const repo_name = process.argv[3];
-const issue_number = process.argv[4]; 
-const param_path = process.argv[5]; 
-const schema_dir = process.argv[6];
+const token = args.ghtoken;
+const bucket_name = args.r2bucket;
+const repo_name = args.ghrepo;
+const issue_number = args.ghissue;
+const schema_dir = args.schemas;
+const params = args.parameters;
 
 try {
     // Fetching the issue data.
-    let body = JSON.parse(fs.readFileSync(param_path).toString());
+    let body = JSON.parse(params);
     let project = body.project;
     let version = body.version;
     let writes = [];
