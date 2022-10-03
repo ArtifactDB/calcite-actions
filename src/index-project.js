@@ -5,7 +5,7 @@
  *
  * We expect the following environment variables to be available:
  *
- * - R2_ACCOUNT_ID, the account id for Cloudflare's R2 storage.
+ * - CF_ACCOUNT_ID, the Cloudflare account id.
  * - R2_ACCESS_KEY_ID, an authorized API key for Cloudflare R2 operations.
  * - R2_SECRET_ACCESS_KEY, an authorized API secret for Cloudflare R2 operations.
  * - GH_BOT_TOKEN, a token with read access to the GitHub CI repository reunning this script.
@@ -29,14 +29,14 @@ import * as internal from "./internal.js";
 
 process.exitCode = 1;
 
-if (!process.env.R2_ACCOUNT_ID || 
+if (!process.env.CF_ACCOUNT_ID || 
         !process.env.R2_ACCESS_KEY_ID || 
         !process.env.R2_SECRET_ACCESS_KEY) {
     throw new Error("missing R2 credentials");
 }
 
 const s3 = new S3({
-    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    endpoint: `https://${process.env.CF_ACCOUNT_ID}.r2.cloudflarestorage.com`,
     accessKeyId: `${process.env.R2_ACCESS_KEY_ID}`,
     secretAccessKey: `${process.env.R2_SECRET_ACCESS_KEY}`,
     signatureVersion: 'v4',
