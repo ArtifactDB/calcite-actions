@@ -81,16 +81,18 @@ try {
     let project = body.project;
     let version = body.version;
     let writes = [];
+    let removes = [];
 
     // Making sure the lock exists.
-    let lockpath = internal.lock(project, version);
     {
+        let lockpath = internal.lock(project, version);
         let lck = s3.headObject({ Bucket: bucket_name, Key: lockpath });
         try {
             await lck.promise();
         } catch (e) {
             throw new Error("failed to acquire the lock file for this project version");
         }
+        removes.push(lockpath);
     }
 
     // Creating some version-specific metadata.
@@ -148,6 +150,9 @@ try {
 
             for (const f of info.Contents) {
                 let relpath = f.Key.split("/").slice(2).join("/");
+                if (relpath.startsWith("..")) {
+                    continue;
+                }
                 everything.add(relpath);
                 if (relpath.endsWith(".json")) {
                     self_names.push(relpath);
@@ -207,6 +212,22 @@ try {
                 throw new Error("listed path in '" + self_path + "' does not exist");
             }
         }
+
+        // Comparing the aggregate against the manifest.
+        let manpath = internal.versionManifest(project, version);
+        let manifest = await utils.getJson(s3, bucket_name, manpath);
+        for (const m of manifest) {
+            if (!everything.has(m)) {
+                throw new Error("missing file '" + m + "' that was declared in the upload 'filenames'");
+            }
+        }
+        let manset = new Set(manifest);
+        for (const e of Array.from(everything)) {
+            if (!manset.has(e)) {
+                throw new Error("detected extra file '" + e + "' file that was not declared in the upload 'filenames'");
+            }
+        }
+        removes.push(manpath);
 
         writes.push(utils.putJson(s3, bucket_name, internal.aggregated(project, version), resolved));
     }
@@ -272,10 +293,11 @@ try {
 
     await Promise.all(writes);
 
-    // Deleting the lock file.
+    // Deleting all the files as the final step. This ensures that
+    // the files are only removed when the job is successful.
     {
-        let res = s3.deleteObject({ Bucket: bucket_name, Key: lockpath });
-        await res.promise();
+        let flush = removes.map(x => s3.deleteObject({ Bucket: bucket_name, Key: x }).promise());
+        await Promise.all(flush);
     }
 
     // Closing the issue once we're successfully done.
