@@ -23,12 +23,18 @@ To deploy, clone/fork this repository and apply the following modifications:
   - Replace `SCHEMA_BUNDLE_URL` with a URL to the desired schema bundle.
   - Replace `R2_BUCKET_NAME` with the name of your R2 bucket.
 
-In addition, several secrets must be defined for the Actions (see the Settings > Secrets > Actions tab):
+Several secrets must be defined for the Actions (see the Settings > Secrets > Actions tab):
 
 - `R2_ACCESS_KEY_ID`, for the access key ID.
 - `R2_SECRET_ACCESS_KEY`, for the access secret.
 - `GH_BOT_TOKEN`, for the GitHub personal access token of the bot account.
   This should have at least public repo privileges.
+
+For forks, we have to re-enable some features:
+
+- Turn the Issues back on (in Settings > General).
+- Re-enable the Actions in the "Actions" tab.
+- Re-enable the scheduled "Purge gypsum projects" workflow.
 
 And that's it.
 Make sure you use the full name of your repository (i.e., `OWNER/REPO`) in the **gypsum** worker's configuration. 
