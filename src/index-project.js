@@ -170,6 +170,7 @@ try {
         let resolved = await Promise.all(aggregated);
 
         const ajv = new Ajv();
+        ajv.addVocabulary(["_attributes", "_children", "_elasticsearch"]);
         let loaded_schemas = {};
         let metadata_only = {};
 
