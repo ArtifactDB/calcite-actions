@@ -208,8 +208,15 @@ try {
             if (expected != doc["path"]) {
                 throw new Error("metadata for '" + self_path + "' has incorrect listed path '" + doc["path"] + "'");
             }
-            if (!everything.has(expected)) {
-                throw new Error("listed path in '" + self_path + "' does not exist");
+
+            if (schema.startsWith("redirection/")) {
+                if (everything.has(expected)) {
+                    throw new Error("listed path in '" + self_path + "' should not exist for redirections");
+                }
+            } else {
+                if (!everything.has(expected)) {
+                    throw new Error("listed path in '" + self_path + "' does not exist");
+                }
             }
         }
 
